@@ -36,10 +36,10 @@ Exiting gracefully...
 $ ./goof http://ipv4.download.thinkbroadband.com:8080/10MB.zip
 Download Progress : 10.0 MiB complete
 
-File downloaded in: 44.531359s
+File downloaded in: 4.531359s
 
 $ ./goof -s 
-Now serving on http://127.0.0.1:8080/goof.go
+Now serving on http://127.0.0.1:8080/goof
 ```
 
 
@@ -50,9 +50,9 @@ To access the binary from anywhere in your system, you can add its location to `
 
 ## ToDo List
 - Add test coverage
-- Make code more native Golang-like
+- Make code more Golang-idiomatic
 - Document and port on other platforms.
-- Test limits
+- Test throughput limits
 - Get feedback for future improvements
 
 ## Feedback
@@ -61,8 +61,8 @@ It's my first Go code that I'm getting out in public, so criticism and improveme
 ```
                     __ 
                    / _|
-  __ _  ___   ___ | |_ 
- / _` |/ _ \ / _ \|  _|
+  ____  ___   ___ | |_ 
+ / _  |/ _ \ / _ \|  _|
 | (_| | (_) | (_) | |  
  \__, |\___/ \___/|_|  
   __/ |                
