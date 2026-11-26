@@ -99,6 +99,23 @@ Saved tool-linux-amd64 (12.4 MiB) in 1.2s
 - **Shutdown.** After the last serve, or on `Ctrl-C`/`SIGTERM`, goof waits up to
   10 seconds for an in-flight transfer before closing the connection.
 
+## Releases
+
+Pushing a tag of the form `vMAJOR.MINOR.PATCH` publishes a GitHub release. The
+`release` workflow builds `linux/amd64`, `linux/arm64`, `darwin/amd64`,
+`darwin/arm64` and `windows/amd64`, then attaches one `.tar.gz` per target
+(`.zip` for Windows) containing the binary, `LICENSE` and `README.md`, plus a
+`checksums.txt` covering every archive. A tag with a `-suffix` is published as a
+pre-release.
+
+```console
+$ git tag -a v1.2.3 -m "v1.2.3"
+$ git push origin v1.2.3
+```
+
+A tag that is not `vMAJOR.MINOR.PATCH` fails the workflow before anything is
+built, so a typo cannot publish a half-formed release.
+
 ## Development
 
 ```console
