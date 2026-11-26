@@ -1,62 +1,119 @@
 # goof
-An implementation of Simon's wonderful `woof` [Python script](http://www.home.unix-ag.org/simon/woof.html) in Golang.
 
-It's 2018 and serving a file over a network is [not as easy as it should be.](https://tpaschalis.github.io/excellent-software-woof/). The original script, as well as this Go command-line application try to provide a solution to this problem.
+Go Offer File — serve a file or a directory over HTTP, then get out of the way.
+It is a Go implementation of Simon Budig's [`woof`](http://www.home.unix-ag.org/simon/woof.html).
 
+```console
+$ goof holiday-photos
+Archived holiday-photos to holiday-photos.zip
+Now serving on http://127.0.0.1:8080/holiday-photos.zip
+# ...the other side downloads it...
+Exiting gracefully...
+```
+
+## Installation
+
+Requires Go 1.22 or later.
+
+```console
+$ go install github.com/tpaschalis/goof@latest
+```
+
+From a checkout, `go build` produces a `goof` binary, and `go install` puts it in
+`$(go env GOBIN)` (or `$(go env GOPATH)/bin`).
 
 ## Usage
-The binary can either serve a file/directory or itself to the specified IP and port. If a URL is provided, it will download from that URL.   
-The help text is pretty straightforward and conveys the main idea.  
+
 ```
-$ ./goof --help
+$ goof -h
 
-Serves a single file <count> times via http on port <port>, on IP address <ip_addr>.
-If a directory is specified, a .zip archive of that directory archive is served instead.
+goof serves a single file, or a zip archive of a directory, over HTTP.
 
-If started with an url as an argument, goof will act as a client, and will download and save the file in the current directory.
+The file is served <count> times, then goof exits. If a URL is given instead,
+goof downloads it into the current directory.
 
-Usage of ./goof:
+Usage:
+  goof [flags] <file|directory|url>
+
+Flags:
   -c int
-        -c <count>.      How many times the file or directory will get served. (default 1)
+    	-c <count>.      How many times the file or directory will get served. (default 1)
   -i string
-        -i <ip_addr>.    The address to serve the file or directory from. (default "127.0.0.1")
+    	-i <ip_addr>.    The address to serve the file or directory from. (default "127.0.0.1")
   -p string
-        -p <port>.       The port to serve the file or directory from. (default "8080")
-  -s    -s.              When specified, goof will distribute/serve itself
-
-Can only serve single files/directories
+    	-p <port>.       The port to serve the file or directory from. Use 0 for any free port. (default "8080")
+  -s	-s.              When specified, goof will distribute/serve itself.
 ```
 
+## Examples
+
+Serve a file once, then exit:
+
+```console
+$ goof report.pdf
+Now serving on http://127.0.0.1:8080/report.pdf
 ```
-$ ./goof myfile
-Now serving on http://127.0.0.1:8080/myfile
-# after file has been received on the other end
-Exiting gracefully...
 
-$ ./goof http://ipv4.download.thinkbroadband.com:8080/10MB.zip
-Download Progress : 10.0 MiB complete
+Serve a directory to everyone on the LAN, up to three times, on any free port:
 
-File downloaded in: 4.531359s
+```console
+$ goof -i 0.0.0.0 -p 0 -c 3 ./build
+Archived ./build to build.zip
+Now serving on http://0.0.0.0:41337/build.zip
+```
 
-$ ./goof -s 
+Send the binary itself, which is handy on a host without a shared filesystem:
+
+```console
+$ goof -s
 Now serving on http://127.0.0.1:8080/goof
 ```
 
+Fetch a URL instead of serving:
 
-## Installation 
-The code was developed using go `v1.9.7`, but should run on any non-totally-antiquated go version.  
-You can clone the repository or download the `goof.go` source file and then `go build` it to get the executable binary, or `go install goof.go` to put in on your `$GOPATH/bin`.   
-To access the binary from anywhere in your system, you can add its location to `$PATH`.  
+```console
+$ goof https://example.com/releases/tool-linux-amd64
+Downloaded 12.4 MiB / 12.4 MiB (100%)
+Saved tool-linux-amd64 (12.4 MiB) in 1.2s
+```
 
-## ToDo List
-- Add test coverage
-- Make code more Golang-idiomatic
-- Document and port on other platforms.
-- Test throughput limits
-- Get feedback for future improvements
+## Behaviour
+
+- **Counting.** `-c` counts *completed* downloads: a full body, or a ranged
+  request that delivers the end of the file (so `curl -C -` finishes a serve).
+  A 404, a `HEAD` request or an aborted transfer does not use up a serve. The
+  listener stays bound between rounds, so back-to-back downloads do not race a
+  restart.
+- **Range requests** are supported, so an interrupted download can resume with
+  `curl -C -` or any resuming client.
+- **Directories** are zipped into a temporary directory, so nothing is written
+  next to your files and an existing archive of the same name is never
+  overwritten. Entry names keep the directory's own name (`photos/a.jpg`), file
+  modes are preserved, and non-regular files such as symlinks and sockets are
+  skipped.
+- **Downloads** are written to `<name>.tmp` and renamed on success, so a failed
+  or cancelled transfer never leaves a truncated file behind. Progress is
+  printed on stderr and the saved path on completion.
+- **Exit codes.** `0` on success or cancellation, `2` for a bad command line,
+  `1` for any other failure.
+- **Shutdown.** After the last serve, or on `Ctrl-C`/`SIGTERM`, goof waits up to
+  10 seconds for an in-flight transfer before closing the connection.
+
+## Development
+
+```console
+$ go vet ./...
+$ go test -race ./...
+```
+
+The test suite covers the zip builder, the download client, and the HTTP
+handler directly; it also builds the binary and drives the real command line
+for the end-to-end cases. CI runs it on Linux, macOS and Windows.
 
 ## Feedback
-It's my first Go code that I'm getting out in public, so criticism and improvement points are not only welcome, but encouraged. Feel free to open an issue, or send me an email!
+
+Criticism and improvement points are welcome — open an issue or a pull request.
+The tool started as a first public Go project, and remains deliberately small.
 
 ```
                     __ 
@@ -65,8 +122,6 @@ It's my first Go code that I'm getting out in public, so criticism and improveme
  / _  |/ _ \ / _ \|  _|
 | (_| | (_) | (_) | |  
  \__, |\___/ \___/|_|  
-  __/ |                
- |___/                 
+  __/ |               
+ |___/                
 ```
-
-
