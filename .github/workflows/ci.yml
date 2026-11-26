@@ -1,0 +1,66 @@
+name: ci
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test (${{ matrix.os }}, go ${{ matrix.go }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            go: "1.22.x"
+          - os: ubuntu-latest
+            go: stable
+          - os: macos-latest
+            go: stable
+          - os: windows-latest
+            go: stable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
+          check-latest: true
+
+      - name: Check formatting
+        shell: bash
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "gofmt needed on:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test -race ./...
+        if: runner.os != 'Windows'
+
+      - name: Test (no race detector on Windows)
+        run: go test ./...
+        if: runner.os == 'Windows'
+
+  install:
+    name: go install
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - name: Install and run the command
+        run: |
+          GOBIN="$RUNNER_TEMP/bin" go install .
+          "$RUNNER_TEMP/bin/goof" -h
