@@ -25,11 +25,13 @@ jobs:
           - os: windows-latest
             go: stable
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version: ${{ matrix.go }}
           check-latest: true
+          # No module dependencies, so there is no go.sum to key a cache on.
+          cache: false
 
       - name: Check formatting
         shell: bash
@@ -56,10 +58,11 @@ jobs:
     name: go install
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version: stable
+          cache: false
       - name: Install and run the command
         run: |
           GOBIN="$RUNNER_TEMP/bin" go install .
