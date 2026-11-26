@@ -80,6 +80,10 @@ func TestDownloadName(t *testing.T) {
 		{"http://example.com/a%20b.txt", "a b.txt"},
 		{"http://example.com/dir/", "index.html"},
 		{"http://example.com", "index.html"},
+		{"http://example.com/..", "index.html"},
+		{"http://example.com/a/..%2F..", "index.html"},
+		{"http://example.com/..%5Cevil.txt", "evil.txt"},
+		{"http://example.com/%5C..%5C..", "index.html"},
 	}
 	for _, tt := range tests {
 		u, ok := parseHTTPURL(tt.in)
@@ -157,6 +161,42 @@ func TestZipDirectory(t *testing.T) {
 				t.Errorf("mode of %s = %v, want 0600", f.Name, f.Mode().Perm())
 			}
 		}
+	}
+}
+
+func TestPrepareTargetCurrentDirectory(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "proj")
+	if err := os.Mkdir(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "a.txt"), []byte("alpha"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(root); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chdir(wd) })
+
+	diskPath, urlPath, cleanup, err := prepareTarget(".", io.Discard)
+	if err != nil {
+		t.Fatalf("prepareTarget: %v", err)
+	}
+	defer cleanup()
+
+	if urlPath != "/proj.zip" {
+		t.Errorf("urlPath = %q, want /proj.zip", urlPath)
+	}
+	data, err := os.ReadFile(diskPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{"proj/a.txt": "alpha"}
+	if got := readZipEntries(t, data); !reflect.DeepEqual(got, want) {
+		t.Errorf("archive entries = %v, want %v", got, want)
 	}
 }
 

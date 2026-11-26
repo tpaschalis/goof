@@ -147,6 +147,13 @@ func prepareTarget(target string, out io.Writer) (diskPath, urlPath string, clea
 	if err != nil {
 		return "", "", func() {}, err
 	}
+	if info.IsDir() {
+		// Resolve relative names such as "." or ".." so the archive is named
+		// after the real directory and its entries carry that prefix.
+		if target, err = filepath.Abs(target); err != nil {
+			return "", "", func() {}, err
+		}
+	}
 	if !info.IsDir() {
 		return target, "/" + filepath.Base(target), func() {}, nil
 	}
@@ -157,7 +164,11 @@ func prepareTarget(target string, out io.Writer) (diskPath, urlPath string, clea
 	}
 	cleanup = func() { os.RemoveAll(tmpDir) }
 
-	archiveName := filepath.Base(filepath.Clean(target)) + ".zip"
+	base := filepath.Base(target)
+	if base == "." || base == ".." || base == string(filepath.Separator) {
+		base = "root" // a filesystem root has no name of its own
+	}
+	archiveName := base + ".zip"
 	diskPath = filepath.Join(tmpDir, archiveName)
 	if err := zipDirectory(target, diskPath); err != nil {
 		return "", "", cleanup, fmt.Errorf("archiving %s: %w", target, err)
@@ -476,11 +487,18 @@ func downloadName(u *url.URL) string {
 	if strings.HasSuffix(u.Path, "/") {
 		return "index.html"
 	}
-	name := path.Base(u.Path)
+	// The URL path is decoded, so it may contain backslashes (%5C). Treat them
+	// as separators too, otherwise Windows would resolve them as directories.
+	name := path.Base(strings.ReplaceAll(u.Path, `\`, "/"))
 	if name == "." || name == "/" || name == "" {
 		return "index.html"
 	}
-	return filepath.FromSlash(name)
+	// Refuse anything that is not a plain file name in the current directory:
+	// "..", drive prefixes such as "C:x", reserved device names on Windows.
+	if !filepath.IsLocal(name) || strings.ContainsAny(name, `/\`) {
+		return "index.html"
+	}
+	return name
 }
 
 // writeProgress renders transfer progress on a single line.
