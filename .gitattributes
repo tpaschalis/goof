@@ -1,0 +1,4 @@
+# Normalise line endings so a Windows checkout is byte-identical to a Linux one.
+# Without this, Git for Windows converts LF to CRLF on checkout and `gofmt -l`
+# then reports every Go file, which failed the Windows leg of CI.
+* text=auto eol=lf
