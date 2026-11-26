@@ -1,0 +1,140 @@
+name: release
+
+# Cut a release by pushing an annotated tag:
+#   git tag -a v1.2.3 -m "v1.2.3" && git push origin v1.2.3
+# The tag is the only place the version is written; a tag that is not
+# vMAJOR.MINOR.PATCH fails in the first job instead of publishing something odd.
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Validate the tag
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+            echo "::error::tag '$TAG' is not vMAJOR.MINOR.PATCH, for example v1.2.3 or v1.2.3-rc.1"
+            exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test -race ./...
+
+  build:
+    name: build (${{ matrix.goos }}/${{ matrix.goarch }})
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { goos: linux, goarch: amd64 }
+          - { goos: linux, goarch: arm64 }
+          - { goos: darwin, goarch: amd64 }
+          - { goos: darwin, goarch: arm64 }
+          - { goos: windows, goarch: amd64 }
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Build and archive
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          name="goof_${version}_${GOOS}_${GOARCH}"
+          bin=goof
+          [ "$GOOS" = windows ] && bin=goof.exe
+
+          mkdir -p dist stage
+          CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o "stage/$bin" .
+          cp LICENSE README.md stage/
+
+          if [ "$GOOS" = windows ]; then
+            ( cd stage && zip -q "../dist/${name}.zip" goof.exe LICENSE README.md )
+          else
+            tar -czf "dist/${name}.tar.gz" -C stage goof LICENSE README.md
+          fi
+          ls -l dist
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: publish
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: dist-*
+          path: dist
+          merge-multiple: true
+
+      - name: Smoke test the linux/amd64 build
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          tar -xzf "dist/goof_${version}_linux_amd64.tar.gz" -C "$RUNNER_TEMP"
+          "$RUNNER_TEMP/goof" -h
+
+      - name: Checksums
+        working-directory: dist
+        run: |
+          set -euo pipefail
+          sha256sum goof_* > "goof_${GITHUB_REF_NAME#v}_checksums.txt"
+          cat "goof_${GITHUB_REF_NAME#v}_checksums.txt"
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          args=(--title "$TAG" --generate-notes --verify-tag)
+          if [[ "$TAG" == *-* ]]; then
+            args+=(--prerelease)
+          fi
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            # Re-run of a failed job: replace the assets instead of failing.
+            gh release upload "$TAG" dist/* --clobber
+          else
+            gh release create "$TAG" dist/* "${args[@]}"
+          fi
+          gh release view "$TAG" --json isPrerelease,isDraft,assets \
+            --jq '"published: prerelease=\(.isPrerelease) draft=\(.isDraft) assets=\([.assets[].name] | join(" "))"'
